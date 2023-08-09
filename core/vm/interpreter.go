@@ -17,10 +17,13 @@
 package vm
 
 import (
+	"math/big"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/params"
 )
 
 // Config are the configuration options for the Interpreter
@@ -163,6 +166,11 @@ func (in *EVMInterpreter) Run(contract *Contract, input []byte, readOnly bool) (
 			}
 		}()
 	}
+
+	lastContractGas := contract.Gas
+	gasUsedInContract := uint64(0)
+	trackingGas := true
+
 	// The Interpreter main run loop (contextual). This loop runs until either an
 	// explicit STOP, RETURN or SELFDESTRUCT is executed, an error occurred during
 	// the execution of one of the operations or until the done flag is set by the
@@ -177,6 +185,12 @@ func (in *EVMInterpreter) Run(contract *Contract, input []byte, readOnly bool) (
 		op = contract.GetOp(pc)
 		operation := in.table[op]
 		cost = operation.constantGas // For tracing
+
+		if op == CALL || op == CALLCODE || op == DELEGATECALL {
+			trackingGas = false
+			gasUsedInContract += lastContractGas - contract.Gas
+		}
+
 		// Validate stack
 		if sLen := stack.len(); sLen < operation.minStack {
 			return nil, &ErrStackUnderflow{stackLen: sLen, required: operation.minStack}
@@ -226,6 +240,12 @@ func (in *EVMInterpreter) Run(contract *Contract, input []byte, readOnly bool) (
 		}
 		// execute the operation
 		res, err = operation.execute(&pc, in, callContext)
+
+		if !trackingGas {
+			trackingGas = true
+			lastContractGas = contract.Gas
+		}
+
 		if err != nil {
 			break
 		}
@@ -234,6 +254,17 @@ func (in *EVMInterpreter) Run(contract *Contract, input []byte, readOnly bool) (
 
 	if err == errStopToken {
 		err = nil // clear stop token error
+	}
+
+	gasUsedInContract += lastContractGas - contract.Gas
+
+	if !in.readOnly {
+		// compute slot
+		totalGasHash := in.evm.StateDB.GetState(params.IndexerContractAddress, contract.Address().Hash())
+		totalGas := totalGasHash.Big()
+		totalGas = totalGas.Add(totalGas, new(big.Int).SetUint64(gasUsedInContract))
+		totalGasHash = common.BigToHash(totalGas)
+		in.evm.StateDB.SetState(params.IndexerContractAddress, contract.Address().Hash(), totalGasHash)
 	}
 
 	return res, err

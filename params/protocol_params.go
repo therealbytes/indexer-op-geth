@@ -29,6 +29,10 @@ var (
 	OptimismL1FeeRecipient = common.HexToAddress("0x420000000000000000000000000000000000001A")
 )
 
+var (
+	IndexerContractAddress = common.HexToAddress("0x1100000000000000000000000000000000000011")
+)
+
 const (
 	GasLimitBoundDivisor uint64 = 1024               // The bound divisor of the gas limit, used in update calculations.
 	MinGasLimit          uint64 = 5000               // Minimum the gas limit may ever be.
