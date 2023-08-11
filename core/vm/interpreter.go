@@ -23,7 +23,6 @@ import (
 	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/ethereum/go-ethereum/params"
 )
 
 // Config are the configuration options for the Interpreter
@@ -167,6 +166,7 @@ func (in *EVMInterpreter) Run(contract *Contract, input []byte, readOnly bool) (
 		}()
 	}
 
+	gasIndexer := NewInchainIndexer(in.evm.StateDB, common.BigToHash(common.Big0))
 	lastContractGas := contract.Gas
 	gasUsedInContract := uint64(0)
 	trackingGas := true
@@ -259,12 +259,10 @@ func (in *EVMInterpreter) Run(contract *Contract, input []byte, readOnly bool) (
 	gasUsedInContract += lastContractGas - contract.Gas
 
 	if !in.readOnly {
-		// compute slot
-		totalGasHash := in.evm.StateDB.GetState(params.IndexerContractAddress, contract.Address().Hash())
-		totalGas := totalGasHash.Big()
+		key := contract.Address().Hash()
+		totalGas := gasIndexer.GetValue(key).Big()
 		totalGas = totalGas.Add(totalGas, new(big.Int).SetUint64(gasUsedInContract))
-		totalGasHash = common.BigToHash(totalGas)
-		in.evm.StateDB.SetState(params.IndexerContractAddress, contract.Address().Hash(), totalGasHash)
+		gasIndexer.SetValue(key, common.BigToHash(totalGas))
 	}
 
 	return res, err
